@@ -784,6 +784,18 @@ fn foo(b byte) byte {
 	return b - 10
 }
 
+fn test_string_filter() {
+	foo := 'V is awesome!!!!'.filter(fn (b byte) bool {
+		return b != `!`
+	})
+	assert foo == 'V is awesome'
+	assert 'Alexander'.filter(filter) == 'Alexnder'
+}
+
+fn filter(b byte) bool {
+	return b != `a`
+}
+
 fn test_split_into_lines() {
 	line_content := 'Line'
 	text_crlf := '${line_content}\r\n${line_content}\r\n${line_content}'
@@ -822,3 +834,37 @@ fn test_string_alias() {
 	ss := s + '!'
 }
 */
+
+// sort an array of structs, by their string field values
+
+struct Ka {
+	s string
+	i int
+}
+
+fn test_sorter() {
+	mut arr := [
+		Ka{
+			s: 'bbb'
+			i: 100
+		},
+		Ka{
+			s: 'aaa'
+			i: 101
+		},
+		Ka{
+			s: 'ccc'
+			i: 102
+		}
+	]
+	cmp := fn (a, b &Ka) int {
+		return compare_strings(a.s, b.s)
+	}
+	arr.sort_with_compare(cmp)
+	assert arr[0].s == 'aaa'
+	assert arr[0].i == 101
+	assert arr[1].s == 'bbb'
+	assert arr[1].i == 100
+	assert arr[2].s == 'ccc'
+	assert arr[2].i == 102
+}

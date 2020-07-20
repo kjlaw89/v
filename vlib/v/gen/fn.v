@@ -7,7 +7,7 @@ import v.ast
 import v.table
 import v.util
 
-fn (mut g Gen) gen_fn_decl(it ast.FnDecl) {
+fn (mut g Gen) gen_fn_decl(it ast.FnDecl, skip bool) {
 	if it.language == .c {
 		// || it.no_body {
 		return
@@ -23,12 +23,12 @@ fn (mut g Gen) gen_fn_decl(it ast.FnDecl) {
 				println('gen fn `$it.name` for type `$sym.name`')
 			}
 			g.cur_generic_type = gen_type
-			g.gen_fn_decl(it)
+			g.gen_fn_decl(it, skip)
 		}
 		g.cur_generic_type = 0
 		return
 	}
-	//g.cur_fn = it
+	// g.cur_fn = it
 	fn_start_pos := g.out.len
 	msvc_attrs := g.write_fn_attrs()
 	// Live
@@ -90,17 +90,24 @@ fn (mut g Gen) gen_fn_decl(it ast.FnDecl) {
 		}
 	} else {
 		if !(it.is_pub || g.pref.is_debug) {
-			g.write('static ')
-			g.definitions.write('static ')
+			// Private functions need to marked as static so that they are not exportable in the
+			// binaries
+			if g.pref.build_mode != .build_module {
+				// if !(g.pref.build_mode == .build_module && g.is_builtin_mod) {
+				// If we are building vlib/builtin, we need all private functions like array_get
+				// to be public, so that all V programs can access them.
+				g.write('static ')
+				g.definitions.write('static ')
+			}
 		}
 		fn_header := if msvc_attrs.len > 0 { '$type_name $msvc_attrs ${name}(' } else { '$type_name ${name}(' }
 		g.definitions.write(fn_header)
 		g.write(fn_header)
 	}
 	fargs, fargtypes := g.fn_args(it.args, it.is_variadic)
-	if it.no_body || (g.pref.use_cache && it.is_builtin) {
+	if it.no_body || (g.pref.use_cache && it.is_builtin) || skip {
 		// Just a function header. Builtin function bodies are defined in builtin.o
-		g.definitions.writeln(');')
+		g.definitions.writeln('); // NO BODY')
 		g.writeln(');')
 		return
 	}
@@ -140,9 +147,9 @@ fn (mut g Gen) gen_fn_decl(it ast.FnDecl) {
 		g.write_defer_stmts_when_needed()
 	}
 	// /////////
-	if g.autofree {
+	if g.autofree && !g.pref.experimental {
 		// TODO: remove this, when g.write_autofree_stmts_when_needed works properly
-		g.writeln(g.autofree_scope_vars(it.body_pos.pos))
+		g.autofree_scope_vars(it.body_pos.pos)
 	}
 	g.writeln('}')
 	g.defer_stmts = []
@@ -269,8 +276,14 @@ fn (mut g Gen) call_expr(node ast.CallExpr) {
 		styp := g.typ(node.return_type.set_flag(.optional))
 		g.write('$styp $tmp_opt = ')
 	}
-	if node.is_method {
-		g.method_call(node)
+	if node.is_method && !node.is_field {
+		if node.name == 'writeln' && g.pref.experimental &&
+			node.args.len > 0 && node.args[0].expr is ast.StringInterLiteral &&
+			g.table.get_type_symbol(node.receiver_type).name == 'strings.Builder' {
+			g.string_inter_literal_sb_optimized(node)
+		} else {
+			g.method_call(node)
+		}
 	} else {
 		g.fn_call(node)
 	}
@@ -346,12 +359,12 @@ fn (mut g Gen) method_call(node ast.CallExpr) {
 	}
 	// TODO performance, detect `array` method differently
 	if left_sym.kind == .array && node.name in
-		['repeat', 'sort_with_compare', 'free', 'push_many', 'trim', 'first', 'last', 'clone', 'reverse', 'slice'] {
+		['repeat', 'sort_with_compare', 'free', 'push_many', 'trim', 'first', 'last', 'pop', 'clone', 'reverse', 'slice'] {
 		// && rec_sym.name == 'array' {
 		// && rec_sym.name == 'array' && receiver_name.starts_with('array') {
 		// `array_byte_clone` => `array_clone`
 		receiver_type_name = 'array'
-		if node.name in ['last', 'first'] {
+		if node.name in ['last', 'first', 'pop'] {
 			return_type_str := g.typ(node.return_type)
 			g.write('*($return_type_str*)')
 		}
@@ -638,7 +651,10 @@ fn (mut g Gen) ref_or_deref_arg(arg ast.CallArg, expected_type table.Type) {
 			}
 		}
 		if !g.is_json_fn {
-			g.write('(voidptr)&/*qq*/')
+			arg_typ_sym := g.table.get_type_symbol(arg.typ)
+			if arg_typ_sym.kind != .function {
+				g.write('(voidptr)&/*qq*/')
+			}
 		}
 	}
 	g.expr_with_cast(arg.expr, arg.typ, expected_type)

@@ -26,9 +26,10 @@ you can do in V.
 * [Types](#types)
     * [Primitive types](#primitive-types)
     * [Strings](#strings)
+    * [Numbers](#numbers)
     * [Arrays](#arrays)
     * [Maps](#maps)
-* [Imports](#imports)
+* [Module Imports](#module-imports)
 * [Statements & Expressions](#statements--expressions)
     * [If](#if)
     * [In Operator](#in-operator)
@@ -39,10 +40,10 @@ you can do in V.
     * [Trailing struct literal syntax](#short-struct-initialization-syntax)
     * [Access modifiers](#access-modifiers)
     * [Methods](#methods)
-* [println](#println)
 
 </td><td width=33% valign=top>
 
+* [println](#println)
 * [Functions 2](#functions-2)
     * [Pure functions by default](#pure-functions-by-default)
     * [Mutable arguments](#mutable-arguments)
@@ -61,15 +62,16 @@ you can do in V.
 * [Testing](#testing)
 * [Memory management](#memory-management)
 * [ORM](#orm)
+
+</td><td valign=top>
+
 * [Writing documentation](#writing-documentation)
 * [Tools](#tools)
     * [vfmt](#vfmt)
     * [Profiling](#profiling)
-
-</td><td valign=top>
-
 * [Advanced](#advanced)
     * [Calling C functions from V](#calling-c-functions-from-v)
+    * [Debugging generated C code](#debugging-generated-c-code)
     * [Conditional compilation](#conditional-compilation)
     * [Compile time pseudo variables](#compile-time-pseudo-variables)
     * [Reflection via codegen](#reflection-via-codegen)
@@ -174,6 +176,7 @@ fn foo() (int, int) {
 a, b := foo()
 println(a) // 2
 println(b) // 3
+c, _ := foo() // ignore values using `_`
 ```
 
 Functions can return multiple values.
@@ -383,6 +386,54 @@ s := r'hello\nworld'
 println(s) // "hello\nworld"
 ```
 
+### Numbers
+
+```v
+a := 123
+```
+
+This will assign the value of 123 to `a`. By default `a` will have the
+type `int`.
+
+You can also use hexadecimal, binary or octal notation for integer literals:
+
+```v
+a := 0x7B
+b := 0b01111011
+c := 0o173
+```
+
+All of these will be assigned the same value, 123. They will all have type
+`int`, no matter what notation you used.
+
+V also supports writing numbers with `_` as separator:
+
+```v
+num := 1_000_000 // same as 1000000
+three := 0b0_11 // same as 0b11
+float_num := 3_122.55  // same as 3122.55
+hexa := 0xF_F // same as 255
+oct := 0o17_3 // same as 0o173
+```
+
+If you want a different type of integer, you can use casting:
+
+```v
+a := i64(123)
+b := byte(42)
+c := i16(12345)
+```
+
+Assigning floating point numbers works the same way:
+
+```v
+f := 1.0
+f1 := f64(3.14)
+f2 := f32(3.14)
+```
+If you do not specify the type explicitly, by default float literals 
+will have the type of `f64`.
+
 ### Arrays
 
 ```v
@@ -496,7 +547,13 @@ numbers := {
 }
 ```
 
-## Imports
+## Module Imports
+
+For information about creating a module, see [Modules](#modules)
+
+### Importing a Module
+
+Modules can be imported using keyword `import`.
 
 ```v
 import os
@@ -507,7 +564,48 @@ fn main() {
 }
 ```
 
-Modules can be imported using keyword `import`. When using types, functions, and constants from other modules, the full path must be specified. In the example above, `name := input()` wouldn't work. That means that it's always clear from which module a function is called.
+When using constants from other modules, the module name must be prefixed. However,
+you can import functions and types from other modules directly:
+
+```v
+import os { input }
+import crypto.sha256 { sum }
+import time { Time }
+```
+
+### Module Import Aliasing
+
+Any imported module name can be aliased using the `as` keyword:
+
+NOTE: this example will not compile unless you have created `mymod/sha256.v`
+```v
+import crypto.sha256
+import mymod.sha256 as mysha256
+
+fn main() {
+    v_hash := sha256.sum('hi'.bytes()).hex()
+    my_hash := mysha256.sum('hi'.bytes()).hex()
+    assert my_hash == v_hash
+}
+```
+
+You cannot alias an imported function or type.
+However, you _can_ redeclare a type.
+
+```v
+import time
+
+type MyTime time.Time
+
+fn main() {
+    my_time := MyTime{
+        year: 2020,
+        month: 12,
+        day: 25
+    }
+    println(my_time.unix_time())
+}
+```
 
 ## Statements & Expressions
 
@@ -1199,9 +1297,8 @@ setup/initialization code when imported (perhaps you want to call
 some C library functions), write a module `init` function inside the module:
 
 ```v
-fn init() int {
+fn init() {
     // your setup code here ...
-    return 1
 }
 ```
 
@@ -1274,7 +1371,7 @@ sum := World(Moon{})
 ```
 
 To check whether a sum type instance holds a certain type, use `sum is Type`.
-To cast a sum type to one of its variants you use `sum as Type`:
+To cast a sum type to one of its variants you can use `sum as Type`:
 
 ```v
 fn (m Mars) dust_storm() bool
@@ -1291,6 +1388,8 @@ fn main() {
     }
 }
 ```
+
+### Matching sum types
 
 You can also use `match` to determine the variant:
 
@@ -1346,6 +1445,7 @@ Note: shadowing only works when the match expression is a variable. It will not 
 
 ### Option/Result types and error handling
 
+Option types are declared with `?Type`:
 ```v
 struct User {
     id int
@@ -1354,12 +1454,6 @@ struct User {
 
 struct Repo {
     users []User
-}
-
-fn new_repo() Repo {
-    return Repo {
-        users: [User{1, 'Andrew'}, User {2, 'Bob'}, User {10, 'Charles'}]
-    }
 }
 
 fn (r Repo) find_user_by_id(id int) ?User {
@@ -1373,9 +1467,11 @@ fn (r Repo) find_user_by_id(id int) ?User {
 }
 
 fn main() {
-    repo := new_repo()
+    repo := Repo {
+        users: [User{1, 'Andrew'}, User {2, 'Bob'}, User {10, 'Charles'}]
+    }
     user := repo.find_user_by_id(10) or { // Option types must be handled by `or` blocks
-        return  // `or` block must end with `return`, `break`, or `continue`
+        return
     }
     println(user.id) // "10"
     println(user.name) // "Charles"
@@ -1391,6 +1487,7 @@ If you don't need to return an error message, you can simply `return none` (this
 
 This is the primary mechanism for error handling in V. They are still values, like in Go,
 but the advantage is that errors can't be unhandled, and handling them is a lot less verbose.
+Unlike other languages, V does not handle exceptions with `throw/try/catch` blocks.
 
 `err` is defined inside an `or` block and is set to the string message passed
 to the `error()` function. `err` is empty if `none` was returned.
@@ -1402,27 +1499,78 @@ user := repo.find_user_by_id(7) or {
 }
 ```
 
-You can also propagate errors:
+### Handling optionals
+
+There are four ways of handling an optional. The first method is to
+propagate the error:
 
 ```v
-resp := http.get(url)?
-println(resp.text)
-```
+import net.http
 
-`http.get` returns `?http.Response`. Because it was called with `?`, the error will be propagated to the calling function
-(which must return an optional). If it is used in the `main()` function it will cause a panic.
-
-The code above is essentially a condensed version of
-
-```v
-resp := http.get(url) or {
-    return error(err)
+fn f(url string) ?string {
+    resp := http.get(url)?
+    return resp.text
 }
-println(resp.text)
 ```
+
+`http.get` returns `?http.Response`. Because `?` follows the call, the 
+error will be propagated to the caller of `f`. When using `?` after a 
+function call producing an optional, the enclosing function must return 
+an optional as well. If error propagation is used in the `main()` 
+function it will `panic` instead, since the error cannot be propagated 
+any further.
+
+The body of `f` is essentially a condensed version of:
+
+```v
+    resp := http.get(url) or {
+        return error(err)
+    }
+    return resp.text
+```
+
+---
+The second method is to break from execution early:
+
+```v
+user := repo.find_user_by_id(7) or {
+    return
+}
+```
+
+Here, you can either call `panic()` or `exit()`, which will stop the execution of the entire program,
+or use a control flow statement (`return`, `break`, `continue`, etc) to break from the current block.
+Note that `break` and `continue` can only be used inside a `for` loop.
 
 V does not have a way to forcibly "unwrap" an optional (as other languages do, for instance Rust's `unwrap()`
-or Swift's `!`). To do this use `or { panic(err) }` instead.
+or Swift's `!`). To do this, use `or { panic(err) }` instead.
+
+---
+The third method is to provide a default value at the end of the `or` block. In case of an error,
+that value would be assigned instead, so it must have the same type as the content of the `Option` being handled.
+
+```v
+fn do_something(s string) ?string {
+    if s == 'foo' { return 'foo' }
+    return error('invalid string') // Could be `return none` as well
+}
+
+a := do_something('foo') or { 'default' } // a will be 'foo'
+b := do_something('bar') or { 'default' } // b will be 'default'
+```
+
+---
+The fourth method is to use `if` unwrapping:
+
+```v
+if resp := http.get(url) {
+    println(resp.text) // resp is a http.Response, not an optional
+} else {
+    println(err)
+}
+```
+Above, `http.get` returns a `?http.Response`. `resp` is only in scope for the first 
+`if` branch. `err` is only in scope for the `else` branch.
 
 ## Generics
 
@@ -1667,16 +1815,16 @@ To generate documentation use vdoc, for example `v doc net.http`.
 
 ## Tools
 
-### vfmt
+### v fmt
 
 You don't need to worry about formatting your code or setting style guidelines.
-`vfmt` takes care of that:
+`v fmt` takes care of that:
 
 ```v
 v fmt file.v
 ```
 
-It's recommended to set up your editor, so that vfmt runs on every save.
+It's recommended to set up your editor, so that `v fmt -w` runs on every save.
 A vfmt run is usually pretty cheap (takes <30ms).
 
 Always run `v fmt -w file.v` before pushing your code.
@@ -1713,15 +1861,29 @@ fn main(){
 #flag -lsqlite3
 #include "sqlite3.h"
 
-struct C.sqlite3
-struct C.sqlite3_stmt
+// See also the example from https://www.sqlite.org/quickstart.html
+struct C.sqlite3{}
+struct C.sqlite3_stmt{}
 
-fn C.sqlite3_open(charptr, C.sqlite3)
-fn C.sqlite3_column_int(stmt C.sqlite3_stmt, n int) int
-// Or just define the type of parameter & leave C. prefix
-fn C.sqlite3_prepare_v2(sqlite3, charptr, int, sqlite3_stmt, charptr) int
-fn C.sqlite3_step(sqlite3)
-fn C.sqlite3_finalize(sqlite3_stmt)
+type FnSqlite3Callback fn(voidptr, int, &charptr, &charptr) int
+
+fn C.sqlite3_open(charptr, &&C.sqlite3) int
+fn C.sqlite3_close(&C.sqlite3) int
+fn C.sqlite3_column_int(stmt &C.sqlite3_stmt, n int) int
+// ... you can also just define the type of parameter & leave out the C. prefix
+fn C.sqlite3_prepare_v2(&sqlite3, charptr, int, &&sqlite3_stmt, &charptr) int
+fn C.sqlite3_step(&sqlite3_stmt)
+fn C.sqlite3_finalize(&sqlite3_stmt)
+fn C.sqlite3_exec(db &sqlite3, sql charptr, FnSqlite3Callback, cb_arg voidptr, emsg &charptr) int
+fn C.sqlite3_free(voidptr)
+
+fn my_callback(arg voidptr, howmany int, cvalues &charptr, cnames &charptr) int {
+    for i in 0..howmany {
+	    print('| ${cstring_to_vstring(cnames[i])}: ${cstring_to_vstring(cvalues[i]):20} ')
+	}
+    println('|')
+    return 0
+}
 
 fn main() {
     path := 'users.db'
@@ -1733,9 +1895,20 @@ fn main() {
     C.sqlite3_step(stmt)
     nr_users := C.sqlite3_column_int(stmt, 0)
     C.sqlite3_finalize(stmt)
-    println(nr_users)
+    println('There are $nr_users users in the database.')
+    //
+    error_msg := charptr(0)
+    query_all_users := 'select * from users'
+    rc := C.sqlite3_exec(db, query_all_users.str, my_callback, 7, &error_msg)
+    if rc != C.SQLITE_OK {
+        eprintln( cstring_to_vstring(error_msg) )
+        C.sqlite3_free(error_msg)
+    }
+    C.sqlite3_close(db)
 }
 ```
+
+### #flag
 
 Add `#flag` directives to the top of your V files to provide C compilation flags like:
 
@@ -1755,6 +1928,8 @@ NB: Each flag must go on its own line (for now)
 #flag linux -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
 #flag linux -DIMGUI_IMPL_API=
 ```
+
+### Including C code
 
 You can also include C code directly in your V module. For example, let's say that your C code is located in a folder named 'c' inside your module folder. Then:
 
@@ -1778,26 +1953,28 @@ Module {
 #include "header.h"
 ```
 NB: @VROOT will be replaced by V with the *nearest parent folder, where there is a v.mod file*.
-Any .v file beside or below the folder where the v.mod file is, can use #flag @VROOT/abc to refer to this folder.
+Any .v file beside or below the folder where the v.mod file is, can use `#flag @VROOT/abc` to refer to this folder.
 The @VROOT folder is also *prepended* to the module lookup path, so you can *import* other
 modules under your @VROOT, by just naming them.
 
-The instructions above will make V look for an compiled .o file in your module folder/c/implementation.o .
+The instructions above will make V look for an compiled .o file in your module `folder/c/implementation.o`.
 If V finds it, the .o file will get linked to the main executable, that used the module.
 If it does not find it, V assumes that there is a `@VROOT/c/implementation.c` file,
 and tries to compile it to a .o file, then will use that.
 
 This allows you to have C code, that is contained in a V module, so that its distribution is easier.
-You can see a complete example for using C code in a V wrapper module here:
-[minimal V project, that has a module, which contains C code](https://github.com/vlang/v/tree/master/vlib/v/tests/project_with_c_code)
+You can see a complete minimal example for using C code in a V wrapper module here:
+[project_with_c_code](https://github.com/vlang/v/tree/master/vlib/v/tests/project_with_c_code).
 
 You can use `-cflags` to pass custom flags to the backend C compiler. You can also use `-cc` to change the default C backend compiler.
 For example: `-cc gcc-9 -cflags -fsanitize=thread`.
 
+### C types
+
 Ordinary zero terminated C strings can be converted to V strings with `string(cstring)` or `string(cstring, len)`.
 
-NB: `string/1` and `string/2` do NOT create a copy of the `cstring`, so you should NOT free it after calling `string()`. If you need to make a copy of the C string (some libc APIs like `getenv/1` pretty much require that, since they
-return pointers to internal libc memory), you can use: `cstring_to_vstring(cstring)`
+NB: Each `string(...)` function does NOT create a copy of the `cstring`, so you should NOT free it after calling `string()`. If you need to make a copy of the C string (some libc APIs like `getenv` pretty much require that, since they
+return pointers to internal libc memory), you can use `cstring_to_vstring(cstring)`.
 
 On Windows, C APIs often return so called `wide` strings (utf16 encoding).
 These can be converted to V strings with `string_from_wide(&u16(cwidestring))` .
@@ -1813,7 +1990,9 @@ To cast a `voidptr` to a V reference, use `user := &User(user_void_ptr)`.
 
 `voidptr` can also be dereferenced into a V struct through casting: `user := User(user_void_ptr)`.
 
-[Socket.v has an example which calls C code from V](https://github.com/vlang/v/blob/master/vlib/net/socket.v) .
+[socket.v has an example which calls C code from V](https://github.com/vlang/v/blob/master/vlib/net/socket.v) .
+
+## Debugging generated C code
 
 To debug issues in the generated C code, you can pass these flags:
 
@@ -2014,7 +2193,7 @@ Run `v translate test.cpp` and V will generate `test.v`:
 
 ```v
 fn main {
-    mut s := []
+    mut s := []string{}
     s << 'V is '
     s << 'awesome'
     println(s.len)

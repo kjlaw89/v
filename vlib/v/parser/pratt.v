@@ -13,7 +13,9 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 	mut node := ast.Expr{}
 	is_stmt_ident := p.is_stmt_ident
 	p.is_stmt_ident = false
-	p.eat_comments()
+	if !p.pref.is_fmt {
+		p.eat_comments()
+	}
 	// Prefix
 	match p.tok.kind {
 		.key_mut, .key_shared, .key_atomic, .key_static {
@@ -32,6 +34,9 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 		}
 		.string {
 			node = p.string_expr()
+		}
+		.comment {
+			node = p.comment()
 		}
 		.dot {
 			// .enum_val
@@ -79,6 +84,18 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 		.key_if {
 			node = p.if_expr()
 		}
+		.key_unsafe {
+			p.next()
+			pos := p.tok.position()
+			assert !p.inside_unsafe
+			p.inside_unsafe = true
+			stmts := p.parse_block()
+			p.inside_unsafe = false
+			node = ast.UnsafeExpr{
+				stmts: stmts
+				pos: pos
+			}
+		}
 		.key_lock, .key_rlock {
 			node = p.lock_expr()
 		}
@@ -101,7 +118,7 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 			pos := p.tok.position()
 			p.next() // sizeof
 			p.check(.lpar)
-			is_known_var := p.mark_var_as_used( p.tok.lit )
+			is_known_var := p.mark_var_as_used(p.tok.lit)
 			if is_known_var {
 				expr := p.parse_ident(table.Language.v)
 				node = ast.SizeOf{
@@ -110,7 +127,10 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 					pos: pos
 				}
 			} else {
+				save_expr_mod := p.expr_mod
+				p.expr_mod = ''
 				sizeof_type := p.parse_type()
+				p.expr_mod = save_expr_mod
 				node = ast.SizeOf{
 					is_type: true
 					typ: sizeof_type
@@ -224,8 +244,9 @@ pub fn (mut p Parser) expr(precedence int) ast.Expr {
 			}
 		} else if p.tok.kind.is_infix() {
 			// return early for deref assign `*x = 2` goes to prefix expr
-			if p.tok.kind == .mul && p.tok.line_nr != p.prev_tok.line_nr && p.peek_tok2.kind ==
-				.assign {
+			if p.tok.kind == .mul &&
+				p.tok.line_nr != p.prev_tok.line_nr &&
+				p.peek_tok2.kind == .assign {
 				return node
 			}
 			// continue on infix expr
@@ -262,6 +283,10 @@ fn (mut p Parser) infix_expr(left ast.Expr) ast.Expr {
 		p.expecting_type = true
 	}
 	right = p.expr(precedence)
+	if p.pref.is_vet && op in [.key_in, .not_in] &&
+		right is ast.ArrayInit && (right as ast.ArrayInit).exprs.len == 1 {
+		p.vet_error('Use `var == value` instead of `var in [value]`', pos.line_nr)
+	}
 	return ast.InfixExpr{
 		left: left
 		right: right

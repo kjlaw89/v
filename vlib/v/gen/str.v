@@ -138,13 +138,66 @@ fn (mut g Gen) string_literal(node ast.StringLiteral) {
 	}
 }
 
+// optimize string interpolation in string builders:
+// `sb.writeln('a=$a')` =>
+// `sb.writeln('a='); sb.writeln(a.str())`
+fn (mut g Gen) string_inter_literal_sb_optimized(call_expr ast.CallExpr) {
+	node := call_expr.args[0].expr as ast.StringInterLiteral
+	// sb_name := g.cur_call_expr.left
+	// g.go_before_stmt(0)
+	g.writeln('// sb inter opt')
+	is_nl := call_expr.name == 'writeln'
+	// println('optimize sb $call_expr.name')
+	for i, val in node.vals {
+		escaped_val := val.replace_each(['"', '\\"', '\r\n', '\\n', '\n', '\\n', '%', '%%'])
+		// if val == '' {
+		// break
+		// continue
+		// }
+		g.write('strings__Builder_write(&')
+		g.expr(call_expr.left)
+		g.write(', tos_lit("')
+		g.write(escaped_val)
+		g.writeln('"));')
+		//
+		if i >= node.exprs.len {
+			break
+		}
+		// if node.expr_types.len <= i || node.exprs.len <= i {
+		// continue
+		// }
+		if is_nl && i == node.exprs.len - 1 {
+			g.write('strings__Builder_writeln(&')
+		} else {
+			g.write('strings__Builder_write(&')
+		}
+		g.expr(call_expr.left)
+		g.write(', ')
+		typ := node.expr_types[i]
+		sym := g.table.get_type_symbol(typ)
+		// if typ.is_number() {
+		if sym.kind == .alias && (sym.info as table.Alias).parent_type.is_number() {
+			// Handle number aliases TODO this must be more generic, handled by g.typ()?
+			g.write('int_str(')
+		} else {
+			g.write(g.typ(typ))
+			g.write('_str(')
+		}
+		g.expr(node.exprs[i])
+		g.writeln('));')
+	}
+	g.writeln('')
+	// println(node.vals)
+	return
+}
+
 fn (mut g Gen) string_inter_literal(node ast.StringInterLiteral) {
 	mut cur_line := ''
 	mut tmp := ''
 	free := g.pref.autofree && g.inside_call && !g.inside_return &&
-		g.inside_ternary == 0 && !g.inside_const 
-		//&& g.cur_fn != 0 &&
-		//g.cur_fn.name != ''
+		g.inside_ternary == 0 && !g.inside_const
+	// && g.cur_fn != 0 &&
+	// g.cur_fn.name != ''
 	if free {
 		// Save the string expr in a temporary variable, so that it can be removed after the call.
 		tmp = g.new_tmp_var()

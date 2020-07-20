@@ -42,17 +42,22 @@ pub fn compile(command string, pref &pref.Preferences) {
 		println('compilation took: $sw.elapsed().milliseconds() ms')
 	}
 	// running does not require the parsers anymore
-	b.myfree()
+	unsafe {
+		b.myfree()
+	}
 	if pref.is_test || pref.is_run {
 		b.run_compiled_executable_and_exit()
 	}
 }
 
 // Temporary, will be done by -autofree
+[unsafe_fn]
 fn (mut b Builder) myfree() {
 	// for file in b.parsed_files {
 	// }
-	b.parsed_files.free()
+	unsafe {
+		b.parsed_files.free()
+	}
 }
 
 fn (mut b Builder) run_compiled_executable_and_exit() {
@@ -127,13 +132,16 @@ fn (mut v Builder) set_module_lookup_paths() {
 }
 
 pub fn (v Builder) get_builtin_files() []string {
-	if v.pref.build_mode == .build_module && v.pref.path == 'vlib/builtin' { // .contains('builtin/' +  location {
+	/*
+	// if v.pref.build_mode == .build_module && v.pref.path == 'vlib/builtin' { // .contains('builtin/' +  location {
+	if v.pref.build_mode == .build_module && v.pref.path == 'vlib/strconv' { // .contains('builtin/' +  location {
 		// We are already building builtin.o, no need to import them again
 		if v.pref.is_verbose {
 			println('skipping builtin modules for builtin.o')
 		}
 		return []
 	}
+	*/
 	// println('get_builtin_files() lookuppath:')
 	// println(v.pref.lookup_path)
 	// Lookup for built-in folder in lookup path.
@@ -163,9 +171,12 @@ Did you forget to add vlib to the path? (Use @vlib for default vlib)')
 	panic('Unreachable code reached.')
 }
 
-pub fn (v Builder) get_user_files() []string {
-	if v.pref.path == 'vlib/builtin' {
-		// get_builtin_files() has already added the builtin files:
+pub fn (v &Builder) get_user_files() []string {
+	if v.pref.path in ['vlib/builtin', 'vlib/strconv', 'vlib/strings', 'vlib/hash'] {
+		// This means we are building a builtin module with `v build-module vlib/strings` etc
+		// get_builtin_files() has already added the files in this module,
+		// do nothing here to avoid duplicate definition errors.
+		v.log('Skipping user files.')
 		return []
 	}
 	mut dir := v.pref.path

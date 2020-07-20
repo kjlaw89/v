@@ -76,6 +76,12 @@ fn (mut v Builder) cc() {
 	if v.pref.is_verbose {
 		println('builder.cc() pref.out_name="$v.pref.out_name"')
 	}
+	if v.pref.only_check_syntax {
+		if v.pref.is_verbose {
+			println('builder.cc returning early, since pref.only_check_syntax is true')
+		}
+		return
+	}
 	v.build_thirdparty_obj_files()
 	vexe := pref.vexe_path()
 	vdir := os.dir(vexe)
@@ -135,10 +141,8 @@ fn (mut v Builder) cc() {
 	// '-Werror',
 	// TODO : try and remove the below workaround options when the corresponding
 	// warnings are totally fixed/removed
-	mut a := [v.pref.cflags, '-std=gnu11', '-Wall', '-Wextra', '-Wno-unused-variable',
-		'-Wno-unused-parameter', '-Wno-unused-result', '-Wno-unused-function', '-Wno-missing-braces',
-		'-Wno-unused-label'
-	]
+	mut a := [v.pref.cflags, '-std=gnu11', '-Wall', '-Wextra', '-Wno-unused-variable', '-Wno-unused-parameter',
+		'-Wno-unused-result', '-Wno-unused-function', '-Wno-missing-braces', '-Wno-unused-label']
 	mut linker_flags := []string{}
 	// TCC on Linux by default, unless -cc was provided
 	// TODO if -cc = cc, TCC is still used, default compiler should be
@@ -201,7 +205,7 @@ fn (mut v Builder) cc() {
 		println('Building ${v.pref.out_name}...')
 	}
 	debug_mode := v.pref.is_debug
-	mut debug_options := '-g'
+	mut debug_options := '-g3'
 	mut optimization_options := '-O2'
 	mut guessed_compiler := v.pref.ccompiler
 	if guessed_compiler == 'cc' && v.pref.is_prod {
@@ -227,7 +231,7 @@ fn (mut v Builder) cc() {
 	//
 	if is_cc_clang {
 		if debug_mode {
-			debug_options = '-g -O0 -no-pie'
+			debug_options = '-g3 -O0 -no-pie'
 		}
 		optimization_options = '-O3'
 		mut have_flto := true
@@ -351,9 +355,10 @@ fn (mut v Builder) cc() {
 	}
 	if v.pref.use_cache {
 		// vexe := pref.vexe_path()
-		cached_modules := ['builtin', 'os', 'math', 'strconv', 'strings']
+		cached_modules := ['builtin', 'os', 'math', 'strconv', 'strings', 'hash'] // , 'strconv.ftoa']
 		for cfile in cached_modules {
-			ofile := os.join_path(pref.default_module_path, 'cache', 'vlib', cfile + '.o')
+			ofile := os.join_path(pref.default_module_path, 'cache', 'vlib', cfile.replace('.', '/') +
+				'.o')
 			if !os.exists(ofile) {
 				println('${cfile}.o is missing. Building...')
 				println('$vexe build-module vlib/$cfile')
@@ -410,7 +415,7 @@ fn (mut v Builder) cc() {
 		println('=====================')
 		println('> C compiler cmd: $cmd')
 		if v.pref.show_cc {
-			println("> C compiler response file $response_file:")
+			println('> C compiler response file $response_file:')
 			println(response_file_content)
 		}
 		println('=====================')
@@ -472,6 +477,7 @@ fn (mut v Builder) cc() {
 		println('$ccompiler took $diff ms')
 		println('=========\n')
 	}
+	v.timing_message('C ${ccompiler:3}: ${diff}ms')
 	// Link it if we are cross compiling and need an executable
 	/*
 	if v.os == .linux && !linux_host && v.pref.build_mode != .build {
@@ -558,9 +564,7 @@ fn (mut b Builder) cc_linux_cross() {
 	}
 	linker_args := ['-L $sysroot/usr/lib/x86_64-linux-gnu/', '--sysroot=$sysroot -v -o $b.pref.out_name -m elf_x86_64',
 		'-dynamic-linker /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2', '$sysroot/crt1.o $sysroot/crti.o x.o',
-		'-lc', '-lcrypto', '-lssl', '-lpthread', '$sysroot/crtn.o',
-		cflags.c_options_only_object_files()
-	]
+		'-lc', '-lcrypto', '-lssl', '-lpthread', '$sysroot/crtn.o', cflags.c_options_only_object_files()]
 	// -ldl
 	linker_args_str := linker_args.join(' ')
 	cmd := '$sysroot/ld.lld ' + linker_args_str

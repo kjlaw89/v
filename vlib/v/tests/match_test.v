@@ -62,6 +62,24 @@ fn test_match_integers() {
 	assert a == -2
 }
 
+fn test_match_multiple() {
+	assert match 9 {
+		1, 2, 3 { '1-3' }
+		4, 5 { '4-5' }
+		6...9 { '6-9' }
+		else { 'other' }
+	} == '6-9'
+}
+
+fn test_match_range() {
+	assert match `f` {
+		`0`...`9` { 'digit' }
+		`A`...`Z` { 'uppercase' }
+		`a`...`z` { 'lowercase' }
+		else { 'other' }
+	} == 'lowercase'
+}
+
 fn test_match_enums() {
 	mut b := Color.red
 	match b {

@@ -45,10 +45,15 @@ jobs:
       run: ./v build-tools
     - name: v vet
       run: |
+        ./v vet vlib/v/scanner
         ./v vet vlib/v/parser
         ./v vet vlib/v/ast
         ./v vet vlib/v/gen/cgen.v
         ./v vet vlib/v/checker
+        ./v vet vlib/sqlite
+#    - name: v fmt
+#      run: |
+#        ./v fmt -verify vlib/v/checker/checker.v
 #    - name: Test v binaries
 #      run: ./v -silent build-vbinaries
 
@@ -56,7 +61,7 @@ jobs:
   alpine-docker-musl-gcc:
     name: alpine-musl
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: thevlang/vlang:alpine-build
       env:
         V_CI_MUSL: 1
@@ -66,13 +71,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        
+
       - name: Build V
         run: |
           make CC=clang
       - name: Test V fixed tests
         run: |
-          v test-fixed 
+          v test-fixed
 
   macos:
     runs-on: ${{ matrix.os }}
@@ -163,8 +168,15 @@ jobs:
     - name: Fixed tests
       run: |
         ./v test-fixed
+    - name: Fixed tests (-prod)
+      run: ./v -o vprod -prod cmd/v && ./vprod test-fixed
     - name: Build examples
       run: ./v build-examples
+    - name: Build modules
+      run: |
+        ./v build-module vlib/os
+        ./v build-module vlib/builtin
+        ./v build-module vlib/strconv
     - name: x64 machine code generation
       run: |
         exit
@@ -201,10 +213,10 @@ jobs:
 
 
   # Ubuntu docker pre-built container
-  ubuntu-musl: 
+  ubuntu-musl:
     name: ubuntu-musl
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: thevlang/vlang:ubuntu-build
       env:
         V_CI_MUSL: 1
@@ -215,13 +227,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        
+
       - name: Build V
         run: |
           echo $VFLAGS && make -j4 && ./v -cg -o v cmd/v
       - name: Test V fixed tests
         run: |
-          v test-fixed 
+          v test-fixed
 
 #   ubuntu-musl:
 #     runs-on: ubuntu-18.04
@@ -404,10 +416,10 @@ jobs:
       run: make -j4
     - name: g++ version
       run: g++-9 --version
-    - name: Running tests with g++
-      run: ./v -cc g++-9 test-fixed
-    - name: V self compilation with g++
-      run: ./v -cc g++-9 -o v2 cmd/v && ./v2 -cc g++-9 -o v3 cmd/v
+#    - name: Running tests with g++
+#      run: ./v -cc g++-9 test-fixed
+#    - name: V self compilation with g++
+#      run: ./v -cc g++-9 -o v2 cmd/v && ./v2 -cc g++-9 -o v3 cmd/v
 
   install-modules:
     runs-on: ubuntu-latest

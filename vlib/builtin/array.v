@@ -102,7 +102,7 @@ fn (mut a array) ensure_cap(required int) {
 		a.data = vcalloc(cap * a.element_size)
 	}
 	else {
-		a.data = C.realloc(a.data, cap * a.element_size)
+		a.data = v_realloc(a.data, u32(cap * a.element_size))
 	}
 	a.cap = cap
 }
@@ -256,6 +256,22 @@ pub fn (a array) last() voidptr {
 	}
 }
 
+// array.pop returns the last element of the array, and removes it
+pub fn (mut a array) pop() voidptr {
+	// in a sense, this is the opposite of `a << x`
+	$if !no_bounds_checking? {
+		if a.len == 0 {
+			panic('array.pop: array is empty')
+		}
+	}
+	new_len := a.len - 1
+	last_elem := unsafe { byteptr(a.data) + (new_len) * a.element_size }
+	a.len = new_len
+	// NB: a.cap is not changed here *on purpose*, so that
+	// further << ops on that array will be more efficient.
+	return memdup(last_elem, a.element_size)
+}
+
 // array.slice returns an array using the same buffer as original array
 // but starting from the `start` element and ending with the element before
 // the `end` element of the original array with the length and capacity
@@ -315,12 +331,18 @@ pub fn (a &array) clone() array {
 	if a.element_size == sizeof(array) {
 		for i in 0..a.len {
 			ar := array{}
-			C.memcpy(&ar, a.get_unsafe(i), sizeof(array))
+			unsafe {
+				C.memcpy(&ar, a.get_unsafe(i), sizeof(array))
+			}
 			ar_clone := ar.clone()
-			arr.set_unsafe(i, &ar_clone)
+			unsafe {
+				arr.set_unsafe(i, &ar_clone)
+			}
 		}
 	} else {
-		C.memcpy(byteptr(arr.data), a.data, a.cap * a.element_size)
+		unsafe {
+			C.memcpy(byteptr(arr.data), a.data, a.cap * a.element_size)
+		}
 	}
 	return arr
 }
@@ -400,6 +422,21 @@ pub fn (mut a3 array) push_many(val voidptr, size int) {
 	a3.len += size
 }
 
+pub fn (mut a array) reverse_in_place() {
+	if a.len < 2 {
+		return
+	}
+	unsafe {
+		mut tmp_value := malloc(a.element_size)
+		for i in 0..a.len/2 {
+			C.memcpy(tmp_value, byteptr(a.data) + i * a.element_size, a.element_size)
+			C.memcpy(byteptr(a.data) + i * a.element_size, byteptr(a.data) + (a.len-1-i) * a.element_size, a.element_size)
+			C.memcpy(byteptr(a.data) + (a.len-1-i) * a.element_size, tmp_value, a.element_size)
+		}
+		free(tmp_value)
+	}
+}
+
 // array.reverse returns a new array with the elements of
 // the original array in reverse order.
 pub fn (a array) reverse() array {
@@ -423,6 +460,9 @@ pub fn (a array) reverse() array {
 // pub fn (a []int) free() {
 [unsafe_fn]
 pub fn (a &array) free() {
+	$if prealloc {
+		return
+	}
 	// if a.is_slice {
 	// return
 	// }
@@ -454,12 +494,18 @@ pub fn (b []byte) hex() string {
 	mut dst_i := 0
 	for i in b {
 		n0 := i >> 4
-		hex[dst_i++] = if n0 < 10 { n0 + `0` } else { n0 + byte(87) }
+		unsafe {
+			hex[dst_i++] = if n0 < 10 { n0 + `0` } else { n0 + byte(87) }
+		}
 		n1 := i & 0xF
-		hex[dst_i++] = if n1 < 10 { n1 + `0` } else { n1 + byte(87) }
+		unsafe {
+			hex[dst_i++] = if n1 < 10 { n1 + `0` } else { n1 + byte(87) }
+		}
 	}
-	hex[dst_i] = `\0`
-	return tos(hex,dst_i)
+	unsafe {
+		hex[dst_i] = `\0`
+		return tos(hex,dst_i)
+	}
 }
 
 // copy copies the `src` byte array elements to the `dst` byte array.
@@ -641,7 +687,9 @@ pub fn compare_f32(a, b &f32) int {
 pub fn (a array) pointers() []voidptr {
 	mut res := []voidptr{}
 	for i in 0..a.len {
-		res << a.get_unsafe(i)
+		unsafe {
+			res << a.get_unsafe(i)
+		}
 	}
 	return res
 }

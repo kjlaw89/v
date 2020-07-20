@@ -51,7 +51,8 @@ pub fn (ctx &Context) draw_text(x, y int, text string, cfg gx.TextCfg) {
 	}
 	ctx.ft.fons.set_font(ctx.ft.font_normal)
 	scale := if ctx.ft.scale == 0 { f32(1) } else { ctx.ft.scale }
-	ctx.ft.fons.set_size(scale * f32(cfg.size))
+	size := if cfg.size == 0 { gg.default_font_size } else { cfg.size }
+	ctx.ft.fons.set_size(scale * f32(size))
 	if cfg.align == gx.align_right {
 		C.fonsSetAlign(ctx.ft.fons, C.FONS_ALIGN_RIGHT | C.FONS_ALIGN_TOP)
 	}
@@ -85,15 +86,30 @@ pub fn (ft &FT) flush(){
 	sfons.flush(ft.fons)
 }
 
-pub fn (ft &Context) text_width(s string) int {
-	return 0
+pub fn (ctx &Context) text_width(s string) int {
+	if !ctx.font_inited {
+		return 0
+	}
+	mut buf := [4]f32
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	return int((buf[2] - buf[0]) / ctx.scale)
 }
 
-pub fn (ft &Context) text_height(s string) int {
-	return 0
+pub fn (ctx &Context) text_height(s string) int {
+	if !ctx.font_inited {
+		return 0
+	}
+	mut buf := [4]f32
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	return int((buf[3] - buf[1]) / ctx.scale)
 }
 
-pub fn (ft &Context) text_size(s string) (int, int) {
-	return 0,0
+pub fn (ctx &Context) text_size(s string) (int, int) {
+	if !ctx.font_inited {
+		return 0,0
+	}
+	mut buf := [4]f32
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	return int((buf[2] - buf[0]) / ctx.scale), int((buf[3] - buf[1]) / ctx.scale)
 }
 

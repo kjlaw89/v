@@ -60,7 +60,7 @@ pub mut:
 pub struct Cookie {
 	name string
 	value string
-	exprires time.Time
+	expires time.Time
 	secure bool
 	http_only bool
 }
@@ -120,9 +120,15 @@ pub fn (mut ctx Context) not_found() Result {
 }
 
 pub fn (mut ctx Context) set_cookie(cookie Cookie) {
-	secure := if cookie.secure { "Secure;" } else { "" }
-	http_only := if cookie.http_only { "HttpOnly" } else { "" }
-	ctx.add_header('Set-Cookie', '$cookie.name=$cookie.value; $secure $http_only')
+	mut cookie_data := []string{}
+	mut secure := if cookie.secure { "Secure;" } else { "" }
+	secure += if cookie.http_only { " HttpOnly" } else { " " }
+	cookie_data << secure
+	if cookie.expires.unix > 0 {
+		cookie_data << 'expires=${cookie.expires.utc_string()}'
+	}
+	data := cookie_data.join(' ')
+	ctx.add_header('Set-Cookie', '$cookie.name=$cookie.value; $data')
 }
 
 pub fn (mut ctx Context) set_cookie_old(key, val string) {
@@ -505,6 +511,20 @@ pub fn (mut ctx Context) handle_static(directory_path string) bool {
 pub fn (mut ctx Context) serve_static(url, file_path, mime_type string) {
 	ctx.static_files[url] = file_path
 	ctx.static_mime_types[url] = mime_type
+}
+
+pub fn (ctx &Context) ip() string {
+	mut ip := ctx.req.headers['X-Forwarded-For']
+	if ip == '' {
+		ip = ctx.req.headers['X-Real-IP']
+	}
+	if ip.contains(',') {
+		ip = ip.all_before(',')
+	}
+	return ip
+	// TODO make return ctx.conn.peer_ip() or { '' } work
+	//res := ctx.conn.peer_ip() or { '' }
+	//return res
 }
 
 pub fn (mut ctx Context) error(s string) {
